@@ -5,6 +5,8 @@
 - `certificate.php` - форма генерации и печати сертификата.
 - `index.html` - статическая демо-версия для GitHub Pages.
 - `background.png` - фоновое изображение сертификата.
+- `fonts/TENETSans-Regular.otf` - фирменный шрифт TENET Sans.
+- `fonts/TENETSans-SemiExpandedBold.otf` - жирное начертание фирменного шрифта.
 - `logo-chery.svg` - логотип Chery.
 - `logo-tenet.svg` - логотип Tenet.
 - `certificate-counter.json` - создается автоматически при первой генерации номера.

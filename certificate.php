@@ -213,6 +213,22 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Сертификат на техническое обслуживание</title>
     <style>
+        @font-face {
+            font-display: swap;
+            font-family: "TENET Sans";
+            font-style: normal;
+            font-weight: 400;
+            src: url("fonts/TENETSans-Regular.otf") format("opentype");
+        }
+
+        @font-face {
+            font-display: swap;
+            font-family: "TENET Sans";
+            font-style: normal;
+            font-weight: 700;
+            src: url("fonts/TENETSans-SemiExpandedBold.otf") format("opentype");
+        }
+
         :root {
             --ink: #142033;
             --muted: #66758a;
@@ -222,6 +238,7 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
             --panel: #ffffff;
             --accent: #1f557f;
             --danger: #a53535;
+            --brand-font: "TENET Sans", Arial, Helvetica, sans-serif;
         }
 
         * {
@@ -467,6 +484,7 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
         }
 
         .dealer {
+            font-family: var(--brand-font);
             font-size: 25px;
             letter-spacing: 1px;
             text-transform: uppercase;
@@ -489,6 +507,7 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
         }
 
         .cert-title strong {
+            font-family: var(--brand-font);
             font-size: 43px;
             font-weight: 500;
             letter-spacing: 2px;
@@ -499,6 +518,7 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
         .cert-number {
             border-bottom: 2px solid #2b3341;
             display: inline-block;
+            font-family: var(--brand-font);
             font-size: 25px;
             font-weight: 700;
             min-width: 250px;
@@ -531,6 +551,7 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
         }
 
         .recipient {
+            font-family: var(--brand-font);
             font-size: 26px;
             line-height: 1.25;
             margin: 0 0 26px;
@@ -539,6 +560,7 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
 
         .service-line,
         .discount-line {
+            font-family: var(--brand-font);
             font-size: 31px;
             line-height: 1.35;
             margin: 14px 0;
@@ -671,11 +693,13 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
         }
 
         .address strong {
+            font-family: var(--brand-font);
             font-size: 39px;
             letter-spacing: 1px;
         }
 
         .phone {
+            font-family: var(--brand-font);
             font-size: 29px;
             margin-bottom: 34px;
         }
