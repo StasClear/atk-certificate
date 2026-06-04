@@ -6,11 +6,13 @@ $brands = [
         'label' => 'Chery',
         'dealer' => 'АТК-МОТОРС ЛЕСНАЯ',
         'logo_names' => ['logo-chery', 'chery', 'cherry', 'Logo-Chery', 'Chery', 'Cherry', 'CHERY', 'CHERRY'],
+        'background' => 'background-chery.png',
     ],
     'tenet' => [
         'label' => 'Tenet',
         'dealer' => 'АТК-МОТОРС ЛЕСНАЯ',
         'logo_names' => ['logo-tenet', 'tenet', 'tenant', 'Logo-Tenet', 'Tenet', 'Tenant', 'TENET', 'TENANT'],
+        'background' => 'background-tenet.png',
     ],
 ];
 
@@ -82,6 +84,17 @@ function find_logo(array $brand, array $extensions): ?string
     }
 
     return null;
+}
+
+function brand_background(array $brand): string
+{
+    $file = (string)($brand['background'] ?? 'background-chery.png');
+
+    if (!is_file(__DIR__ . DIRECTORY_SEPARATOR . $file)) {
+        return 'background-chery.png';
+    }
+
+    return rawurlencode($file);
 }
 
 function next_certificate_number(): string
@@ -194,12 +207,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $selectedBrand = $brands[$data['brand']];
 $logo = find_logo($selectedBrand, $logoExtensions);
+$background = brand_background($selectedBrand);
 $brandAssets = [];
 foreach ($brands as $key => $brand) {
     $brandAssets[$key] = [
         'label' => $brand['label'],
         'dealer' => $brand['dealer'],
         'logo' => find_logo($brand, $logoExtensions),
+        'background' => brand_background($brand),
     ];
 }
 $serviceMileageJson = json_encode($serviceMileageMap, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -414,7 +429,7 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
             width: 794px;
             min-height: 1123px;
             overflow: hidden;
-            background: #f8fbfe url("background.png") center bottom / cover no-repeat;
+            background: #f8fbfe var(--certificate-background, url("background-chery.png")) center bottom / cover no-repeat;
             border: 1px solid #bfd1df;
             box-shadow: 0 18px 50px rgba(19, 42, 66, 0.18);
             color: var(--ink);
@@ -880,7 +895,7 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
         </aside>
 
         <section class="preview-wrap" aria-label="Предпросмотр сертификата">
-            <article class="certificate" id="certificate">
+            <article class="certificate" id="certificate" style="--certificate-background: url('<?= h($background) ?>')">
                 <div class="fineprint">*сертификат действителен при наличии печати организации, подписи должностного лица, номера сертификата, пробега, VIN, срока действия.</div>
 
                 <div class="brand-block">
@@ -947,6 +962,7 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
             const brandAssets = <?= json_encode($brandAssets, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
             const serviceMileage = <?= $serviceMileageJson ?>;
             const form = document.querySelector('form.form-grid');
+            const certificate = document.getElementById('certificate');
             const logoBox = document.querySelector('[data-brand-logo]');
             const dealerBox = document.querySelector('[data-brand-dealer]');
             const printButton = document.getElementById('printButton');
@@ -965,6 +981,9 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
                 }
 
                 dealerBox.textContent = brand.dealer;
+                if (certificate && brand.background) {
+                    certificate.style.setProperty('--certificate-background', 'url("' + encodeURI(brand.background) + '")');
+                }
                 if (brand.logo) {
                     logoBox.innerHTML = '<img src="' + encodeURI(brand.logo) + '" alt="' + escapeHtml(brand.label) + '">';
                 } else {

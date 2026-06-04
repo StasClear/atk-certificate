@@ -206,7 +206,7 @@
             width: 794px;
             min-height: 1123px;
             overflow: hidden;
-            background: #f8fbfe url("background.png") center bottom / cover no-repeat;
+            background: #f8fbfe var(--certificate-background, url("background-chery.png")) center bottom / cover no-repeat;
             border: 1px solid #bfd1df;
             box-shadow: 0 18px 50px rgba(19, 42, 66, 0.18);
             color: var(--ink);
@@ -668,7 +668,7 @@
         </aside>
 
         <section class="preview-wrap" aria-label="Предпросмотр сертификата">
-            <article class="certificate" id="certificate">
+            <article class="certificate" id="certificate" style="--certificate-background: url('background-chery.png')">
                 <div class="fineprint">*сертификат действителен при наличии печати организации, подписи должностного лица, номера сертификата, пробега, VIN, срока действия.</div>
 
                 <div class="brand-block">
@@ -721,9 +721,10 @@
 
         <script>
         (function () {
-            const brandAssets = {"chery":{"label":"Chery","dealer":"АТК-МОТОРС ЛЕСНАЯ","logo":"logo-chery.svg"},"tenet":{"label":"Tenet","dealer":"АТК-МОТОРС ЛЕСНАЯ","logo":"logo-tenet.svg"}};
+            const brandAssets = {"chery":{"label":"Chery","dealer":"АТК-МОТОРС ЛЕСНАЯ","logo":"logo-chery.svg","background":"background-chery.png"},"tenet":{"label":"Tenet","dealer":"АТК-МОТОРС ЛЕСНАЯ","logo":"logo-tenet.svg","background":"background-tenet.png"}};
             const serviceMileage = {"ТО-0":"5 000 км","ТО-2":"15 000 км","ТО-4":"25 000 км","ТО-5":"35 000 км","ТО-6":"45 000 км","ТО-7":"55 000 км","ТО-8":"65 000 км"};
             const form = document.querySelector('form.form-grid');
+            const certificate = document.getElementById('certificate');
             const logoBox = document.querySelector('[data-brand-logo]');
             const dealerBox = document.querySelector('[data-brand-dealer]');
             const generateButton = document.getElementById('generateButton');
@@ -743,6 +744,9 @@
                 }
 
                 dealerBox.textContent = brand.dealer;
+                if (certificate && brand.background) {
+                    certificate.style.setProperty('--certificate-background', 'url("' + encodeURI(brand.background) + '")');
+                }
                 if (brand.logo) {
                     logoBox.innerHTML = '<img src="' + encodeURI(brand.logo) + '" alt="' + escapeHtml(brand.label) + '">';
                 } else {

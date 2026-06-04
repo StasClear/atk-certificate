@@ -4,7 +4,8 @@
 
 - `certificate.php` - форма генерации и печати сертификата.
 - `index.html` - статическая демо-версия для GitHub Pages.
-- `background.png` - фоновое изображение сертификата.
+- `background-chery.png` - фоновое изображение сертификата Chery.
+- `background-tenet.png` - фоновое изображение сертификата Tenet.
 - `fonts/TENETSans-Regular.otf` - фирменный шрифт TENET Sans.
 - `fonts/TENETSans-SemiExpandedBold.otf` - жирное начертание фирменного шрифта.
 - `logo-chery.svg` - логотип Chery.
@@ -13,7 +14,7 @@
 
 ## Установка
 
-1. Загрузите файлы `certificate.php`, `background.png`, `logo-chery.svg` и `logo-tenet.svg` в одну папку на сервере.
+1. Загрузите файлы `certificate.php`, `background-chery.png`, `background-tenet.png`, `logo-chery.svg` и `logo-tenet.svg` в одну папку на сервере.
 2. Убедитесь, что PHP может записывать в эту папку. Это нужно для файла счетчика `certificate-counter.json`.
 3. Откройте `certificate.php` в браузере.
 
