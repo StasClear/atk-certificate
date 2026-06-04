@@ -1,1 +1,6 @@
 certificate-counter.json
+certificates-registry.json
+certificates.xlsx
+config.local.php
+generated-pdfs/
+.pdf-render-*.html

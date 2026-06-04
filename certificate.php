@@ -18,17 +18,24 @@ $brands = [
 
 $logoExtensions = ['svg', 'png', 'webp', 'jpg', 'jpeg'];
 $serviceMileageMap = [
-    'ТО-0' => '5 000 км',
-    'ТО-2' => '15 000 км',
-    'ТО-4' => '25 000 км',
-    'ТО-5' => '35 000 км',
-    'ТО-6' => '45 000 км',
-    'ТО-7' => '55 000 км',
-    'ТО-8' => '65 000 км',
+    'ТО-0' => '5000 км',
+    'ТО-1' => '10000 км',
+    'ТО-2' => '20000 км',
+    'ТО-3' => '30000 км',
+    'ТО-4' => '40000 км',
+    'ТО-5' => '50000 км',
+    'ТО-6' => '60000 км',
+    'ТО-7' => '70000 км',
+    'ТО-8' => '80000 км',
+    'ТО-9' => '90000 км',
+    'ТО-10' => '100000 км',
 ];
 $errors = [];
+$statusMessages = [];
 $generated = false;
 $autoPrint = false;
+$pendingSave = false;
+$saveContext = null;
 
 function field(string $name, string $default = ''): string
 {
@@ -95,6 +102,359 @@ function brand_background(array $brand): string
     }
 
     return rawurlencode($file);
+}
+
+function load_local_config(): array
+{
+    $default = [
+        'yandex_disk_token' => '',
+        'yandex_disk_folder' => '/АТК Сертификаты',
+        'yandex_disk_publish_files' => true,
+        'pdf_generator' => [
+            'enabled' => true,
+            'browser_path' => 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+        ],
+    ];
+
+    $file = __DIR__ . DIRECTORY_SEPARATOR . 'config.local.php';
+    if (!is_file($file)) {
+        return $default;
+    }
+
+    $config = require $file;
+    if (!is_array($config)) {
+        return $default;
+    }
+
+    return array_replace_recursive($default, $config);
+}
+
+function registry_file(): string
+{
+    return __DIR__ . DIRECTORY_SEPARATOR . 'certificates-registry.json';
+}
+
+function read_registry(): array
+{
+    $file = registry_file();
+    if (!is_file($file)) {
+        return [];
+    }
+
+    $data = json_decode((string)file_get_contents($file), true);
+    return is_array($data) ? $data : [];
+}
+
+function save_registry_record(array $record): void
+{
+    $file = registry_file();
+    $handle = fopen($file, 'c+');
+    if (!$handle) {
+        throw new RuntimeException('Не удалось открыть файл реестра сертификатов.');
+    }
+
+    try {
+        if (!flock($handle, LOCK_EX)) {
+            throw new RuntimeException('Не удалось заблокировать файл реестра.');
+        }
+
+        rewind($handle);
+        $raw = stream_get_contents($handle) ?: '';
+        $registry = json_decode($raw, true);
+        if (!is_array($registry)) {
+            $registry = [];
+        }
+
+        $updated = false;
+        foreach ($registry as $index => $existing) {
+            if (is_array($existing) && ($existing['certificate_number'] ?? '') === $record['certificate_number']) {
+                $registry[$index] = array_replace($existing, $record);
+                $updated = true;
+                break;
+            }
+        }
+
+        if (!$updated) {
+            $registry[] = $record;
+        }
+
+        ftruncate($handle, 0);
+        rewind($handle);
+        fwrite($handle, json_encode($registry, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        fflush($handle);
+        flock($handle, LOCK_UN);
+    } finally {
+        fclose($handle);
+    }
+}
+
+function yandex_request(string $method, string $url, string $token, ?string $body = null): array
+{
+    if (!function_exists('curl_init')) {
+        throw new RuntimeException('На сервере не включен PHP cURL, он нужен для загрузки в Яндекс Диск.');
+    }
+
+    $curl = curl_init($url);
+    curl_setopt_array($curl, [
+        CURLOPT_CUSTOMREQUEST => $method,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => ['Authorization: OAuth ' . $token],
+        CURLOPT_TIMEOUT => 60,
+    ]);
+
+    if ($body !== null) {
+        curl_setopt($curl, CURLOPT_POSTFIELDS, $body);
+    }
+
+    $response = curl_exec($curl);
+    $status = (int)curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+    $error = curl_error($curl);
+    curl_close($curl);
+
+    if ($response === false) {
+        throw new RuntimeException('Ошибка запроса к Яндекс Диску: ' . $error);
+    }
+
+    $decoded = json_decode((string)$response, true);
+    if ($status >= 400) {
+        $message = is_array($decoded) ? (string)($decoded['message'] ?? $decoded['error'] ?? $response) : (string)$response;
+        throw new RuntimeException('Яндекс Диск вернул ошибку ' . $status . ': ' . $message);
+    }
+
+    return is_array($decoded) ? $decoded : [];
+}
+
+function yandex_api_url(string $path, array $query = []): string
+{
+    return 'https://cloud-api.yandex.net/v1/disk/' . $path . ($query ? '?' . http_build_query($query) : '');
+}
+
+function yandex_ensure_folder(string $folder, string $token): void
+{
+    $parts = array_values(array_filter(explode('/', trim($folder, '/'))));
+    $current = '';
+
+    foreach ($parts as $part) {
+        $current .= '/' . $part;
+        try {
+            yandex_request('PUT', yandex_api_url('resources', ['path' => $current]), $token);
+        } catch (RuntimeException $exception) {
+            if (!str_contains($exception->getMessage(), '409')) {
+                throw $exception;
+            }
+        }
+    }
+}
+
+function yandex_upload_file(string $localFile, string $diskPath, array $config): array
+{
+    $token = trim((string)$config['yandex_disk_token']);
+    if ($token === '') {
+        throw new RuntimeException('В config.local.php не указан yandex_disk_token.');
+    }
+
+    $folder = rtrim((string)$config['yandex_disk_folder'], '/');
+    yandex_ensure_folder($folder, $token);
+    yandex_ensure_folder($folder . '/pdf', $token);
+
+    $upload = yandex_request('GET', yandex_api_url('resources/upload', [
+        'path' => $diskPath,
+        'overwrite' => 'true',
+    ]), $token);
+
+    if (empty($upload['href'])) {
+        throw new RuntimeException('Яндекс Диск не вернул ссылку загрузки.');
+    }
+
+    $bytes = file_get_contents($localFile);
+    if ($bytes === false) {
+        throw new RuntimeException('Не удалось прочитать PDF для загрузки.');
+    }
+
+    yandex_request('PUT', (string)$upload['href'], $token, $bytes);
+
+    $publicUrl = null;
+    if (!empty($config['yandex_disk_publish_files'])) {
+        yandex_request('PUT', yandex_api_url('resources/publish', ['path' => $diskPath]), $token);
+        $resource = yandex_request('GET', yandex_api_url('resources', ['path' => $diskPath]), $token);
+        $publicUrl = isset($resource['public_url']) ? (string)$resource['public_url'] : null;
+    }
+
+    return [
+        'disk_path' => $diskPath,
+        'public_url' => $publicUrl,
+    ];
+}
+
+function xml_text(string $value): string
+{
+    return htmlspecialchars($value, ENT_QUOTES | ENT_XML1 | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function excel_column(int $index): string
+{
+    $name = '';
+    while ($index > 0) {
+        $index--;
+        $name = chr(65 + ($index % 26)) . $name;
+        $index = intdiv($index, 26);
+    }
+
+    return $name;
+}
+
+function xlsx_cell(int $column, int $row, string $value): string
+{
+    $cell = excel_column($column) . $row;
+    return '<c r="' . $cell . '" t="inlineStr"><is><t>' . xml_text($value) . '</t></is></c>';
+}
+
+function create_registry_xlsx(array $registry): string
+{
+    if (!class_exists('ZipArchive')) {
+        throw new RuntimeException('На сервере не включен ZipArchive, он нужен для создания XLSX.');
+    }
+
+    $headers = [
+        'Номер сертификата',
+        'Дата создания',
+        'Действие',
+        'Фамилия',
+        'Имя',
+        'Отчество',
+        'ФИО',
+        'Бренд',
+        'ТО',
+        'Пробег',
+        'Скидка',
+        'VIN',
+        'Срок действия',
+        'PDF на Яндекс Диске',
+        'Путь PDF на Диске',
+        'Локальный PDF',
+        'Ошибка PDF',
+    ];
+
+    $rows = [$headers];
+    foreach ($registry as $record) {
+        if (!is_array($record)) {
+            continue;
+        }
+
+        $rows[] = [
+            (string)($record['certificate_number'] ?? ''),
+            (string)($record['created_at'] ?? ''),
+            (string)($record['action'] ?? ''),
+            (string)($record['last_name'] ?? ''),
+            (string)($record['first_name'] ?? ''),
+            (string)($record['middle_name'] ?? ''),
+            (string)($record['full_name'] ?? ''),
+            (string)($record['brand_label'] ?? $record['brand'] ?? ''),
+            (string)($record['service_to'] ?? ''),
+            (string)($record['mileage'] ?? ''),
+            (string)($record['discount'] ?? ''),
+            (string)($record['vin'] ?? ''),
+            (string)($record['valid_until_formatted'] ?? $record['valid_until'] ?? ''),
+            (string)($record['pdf_public_url'] ?? ''),
+            (string)($record['pdf_disk_path'] ?? ''),
+            (string)($record['pdf_local_path'] ?? ''),
+            (string)($record['pdf_error'] ?? ''),
+        ];
+    }
+
+    $sheetRows = [];
+    foreach ($rows as $rowIndex => $row) {
+        $cells = [];
+        foreach ($row as $columnIndex => $value) {
+            $cells[] = xlsx_cell($columnIndex + 1, $rowIndex + 1, (string)$value);
+        }
+        $sheetRows[] = '<row r="' . ($rowIndex + 1) . '">' . implode('', $cells) . '</row>';
+    }
+
+    $sheetXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        . '<sheetData>' . implode('', $sheetRows) . '</sheetData>'
+        . '</worksheet>';
+
+    $workbookXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        . '<sheets><sheet name="Сертификаты" sheetId="1" r:id="rId1"/></sheets>'
+        . '</workbook>';
+
+    $relsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        . '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+        . '</Relationships>';
+
+    $workbookRelsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        . '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+        . '</Relationships>';
+
+    $contentTypesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        . '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        . '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        . '<Default Extension="xml" ContentType="application/xml"/>'
+        . '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        . '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        . '</Types>';
+
+    $xlsxFile = __DIR__ . DIRECTORY_SEPARATOR . 'certificates.xlsx';
+    $zip = new ZipArchive();
+    if ($zip->open($xlsxFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        throw new RuntimeException('Не удалось создать certificates.xlsx.');
+    }
+
+    $zip->addFromString('[Content_Types].xml', $contentTypesXml);
+    $zip->addFromString('_rels/.rels', $relsXml);
+    $zip->addFromString('xl/workbook.xml', $workbookXml);
+    $zip->addFromString('xl/_rels/workbook.xml.rels', $workbookRelsXml);
+    $zip->addFromString('xl/worksheets/sheet1.xml', $sheetXml);
+    $zip->close();
+
+    return $xlsxFile;
+}
+
+function file_uri(string $path): string
+{
+    return 'file:///' . str_replace('%2F', '/', rawurlencode(str_replace('\\', '/', $path)));
+}
+
+function create_pdf_from_html(string $html, string $number, array $config): string
+{
+    if (empty($config['pdf_generator']['enabled'])) {
+        throw new RuntimeException('Генерация PDF отключена в config.local.php.');
+    }
+
+    $browser = (string)($config['pdf_generator']['browser_path'] ?? '');
+    if ($browser === '' || !is_file($browser)) {
+        throw new RuntimeException('Не найден браузер для генерации PDF: ' . $browser);
+    }
+
+    $pdfDir = __DIR__ . DIRECTORY_SEPARATOR . 'generated-pdfs';
+    if (!is_dir($pdfDir) && !mkdir($pdfDir, 0775, true) && !is_dir($pdfDir)) {
+        throw new RuntimeException('Не удалось создать папку generated-pdfs.');
+    }
+
+    $safeNumber = preg_replace('/[^A-Z0-9-]/', '', $number) ?: 'certificate';
+    $htmlFile = __DIR__ . DIRECTORY_SEPARATOR . '.pdf-render-' . $safeNumber . '.html';
+    $pdfFile = $pdfDir . DIRECTORY_SEPARATOR . $safeNumber . '.pdf';
+    $base = '<base href="' . h(file_uri(__DIR__ . DIRECTORY_SEPARATOR)) . '">';
+    $html = preg_replace('/<head>/', '<head>' . $base, $html, 1) ?: $html;
+    file_put_contents($htmlFile, $html);
+
+    $command = escapeshellarg($browser)
+        . ' --headless --disable-gpu --no-first-run --print-to-pdf=' . escapeshellarg($pdfFile)
+        . ' ' . escapeshellarg(file_uri($htmlFile));
+
+    exec($command, $output, $exitCode);
+    @unlink($htmlFile);
+
+    if ($exitCode !== 0 || !is_file($pdfFile) || filesize($pdfFile) < 1000) {
+        throw new RuntimeException('Не удалось создать PDF через браузер. Код выхода: ' . $exitCode);
+    }
+
+    return $pdfFile;
 }
 
 function next_certificate_number(): string
@@ -196,9 +556,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!$errors) {
         try {
-            $data['certificate_number'] = next_certificate_number();
+            if (!preg_match('/^ATK-\d{4}-\d{4}$/', $data['certificate_number'])) {
+                $data['certificate_number'] = next_certificate_number();
+            }
             $generated = true;
             $autoPrint = $action === 'print';
+            $pendingSave = true;
+            $saveContext = [
+                'action' => $action,
+                'created_at' => date('c'),
+            ];
         } catch (Throwable $exception) {
             $errors[] = $exception->getMessage();
         }
@@ -220,6 +587,7 @@ foreach ($brands as $key => $brand) {
 $serviceMileageJson = json_encode($serviceMileageMap, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 $fullName = trim($data['last_name'] . ' ' . $data['first_name'] . ' ' . $data['middle_name']);
 $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['valid_until'])) : '';
+ob_start();
 ?>
 <!doctype html>
 <html lang="ru">
@@ -863,7 +1231,7 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
 
                 <label class="field">
                     <span>Пробег до</span>
-                    <input name="mileage" value="<?= h($data['mileage']) ?>" placeholder="Например: 15 000 км" readonly required>
+                    <input name="mileage" value="<?= h($data['mileage']) ?>" placeholder="Например: 10000 км" readonly required>
                 </label>
 
                 <label class="field">
@@ -885,7 +1253,7 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
 
                 <div class="actions">
                     <button class="btn-secondary" type="submit" name="action" value="generate">Сгенерировать</button>
-                    <button class="btn-primary" type="button" id="printButton">Печать</button>
+                    <button class="btn-primary" type="submit" name="action" value="print" id="printButton">Печать</button>
                 </div>
             </form>
 
@@ -965,7 +1333,6 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
             const certificate = document.getElementById('certificate');
             const logoBox = document.querySelector('[data-brand-logo]');
             const dealerBox = document.querySelector('[data-brand-dealer]');
-            const printButton = document.getElementById('printButton');
             const certificateNumberInput = document.querySelector('input[name="certificate_number"]');
 
             function escapeHtml(value) {
@@ -1069,58 +1436,10 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
                 setPreview('valid_until', formatDate(getField('valid_until') ? getField('valid_until').value : ''), ' ');
             }
 
-            async function ensureCertificateNumber() {
-                if (certificateNumberInput && certificateNumberInput.value.trim()) {
-                    return certificateNumberInput.value.trim();
-                }
-
-                const response = await fetch('?action=next-number', {
-                    cache: 'no-store',
-                    headers: {
-                        'Accept': 'application/json',
-                    },
-                });
-                const result = await response.json();
-
-                if (!response.ok || !result.ok || !result.number) {
-                    throw new Error(result.error || 'Не удалось получить номер сертификата.');
-                }
-
-                certificateNumberInput.value = result.number;
-                setPreview('certificate_number', result.number, 'авто');
-                return result.number;
-            }
-
             if (form) {
                 form.querySelectorAll('input, select').forEach(function (input) {
                     input.addEventListener('input', updatePreview);
                     input.addEventListener('change', updatePreview);
-                });
-            }
-
-            if (printButton && form) {
-                printButton.addEventListener('click', async function () {
-                    updatePreview();
-
-                    if (!form.reportValidity()) {
-                        return;
-                    }
-
-                    printButton.disabled = true;
-                    const oldText = printButton.textContent;
-                    printButton.textContent = 'Готовим...';
-
-                    try {
-                        await ensureCertificateNumber();
-                        updatePreview();
-                        printButton.textContent = oldText;
-                        printButton.disabled = false;
-                        window.print();
-                    } catch (error) {
-                        printButton.textContent = oldText;
-                        printButton.disabled = false;
-                        alert(error.message || 'Не удалось подготовить сертификат к печати.');
-                    }
                 });
             }
 
@@ -1129,3 +1448,58 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
     </script>
 </body>
 </html>
+<?php
+$pageHtml = ob_get_clean();
+
+if ($pendingSave && $generated && !$errors) {
+    $config = load_local_config();
+    $record = [
+        'certificate_number' => $data['certificate_number'],
+        'created_at' => (string)($saveContext['created_at'] ?? date('c')),
+        'action' => (string)($saveContext['action'] ?? ''),
+        'last_name' => $data['last_name'],
+        'first_name' => $data['first_name'],
+        'middle_name' => $data['middle_name'],
+        'full_name' => $fullName,
+        'brand' => $data['brand'],
+        'brand_label' => $selectedBrand['label'],
+        'service_to' => $data['service_to'],
+        'mileage' => $data['mileage'],
+        'discount' => $data['discount'],
+        'vin' => $data['vin'],
+        'valid_until' => $data['valid_until'],
+        'valid_until_formatted' => $formattedDate,
+        'pdf_local_path' => null,
+        'pdf_disk_path' => null,
+        'pdf_public_url' => null,
+        'pdf_error' => null,
+    ];
+
+    try {
+        $pdfFile = create_pdf_from_html($pageHtml, $data['certificate_number'], $config);
+        $record['pdf_local_path'] = basename(dirname($pdfFile)) . '/' . basename($pdfFile);
+
+        $diskFolder = rtrim((string)$config['yandex_disk_folder'], '/');
+        $diskPath = $diskFolder . '/pdf/' . basename($pdfFile);
+        $upload = yandex_upload_file($pdfFile, $diskPath, $config);
+        $record['pdf_disk_path'] = $upload['disk_path'];
+        $record['pdf_public_url'] = $upload['public_url'];
+    } catch (Throwable $exception) {
+        $record['pdf_error'] = $exception->getMessage();
+    }
+
+    try {
+        save_registry_record($record);
+        $xlsxFile = create_registry_xlsx(read_registry());
+
+        if (trim((string)$config['yandex_disk_token']) !== '') {
+            $diskFolder = rtrim((string)$config['yandex_disk_folder'], '/');
+            yandex_upload_file($xlsxFile, $diskFolder . '/certificates.xlsx', $config);
+        }
+    } catch (Throwable $exception) {
+        error_log('Certificate registry save failed: ' . $exception->getMessage());
+    }
+}
+
+echo $pageHtml;
+?>
