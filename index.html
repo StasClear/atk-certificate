@@ -275,13 +275,13 @@
         .cert-title {
             align-items: end;
             display: flex;
-            gap: 14px;
+            gap: 10px;
             justify-content: center;
             margin-bottom: 34px;
         }
 
         .cert-title strong {
-            font-size: 47px;
+            font-size: 43px;
             font-weight: 500;
             letter-spacing: 2px;
             text-transform: uppercase;
@@ -291,11 +291,12 @@
         .cert-number {
             border-bottom: 2px solid #2b3341;
             display: inline-block;
-            font-size: 29px;
+            font-size: 25px;
             font-weight: 700;
-            min-width: 190px;
+            min-width: 250px;
             padding: 0 8px 4px;
             text-align: left;
+            white-space: nowrap;
         }
 
         .separator {
@@ -474,16 +475,24 @@
         .meta {
             align-items: center;
             display: grid;
-            grid-template-columns: 1fr auto 1fr;
-            gap: 20px;
+            grid-template-columns: minmax(0, 0.9fr) auto minmax(0, 1.3fr);
+            gap: 16px;
             font-family: "Arial Narrow", Arial, Helvetica, sans-serif;
             font-size: 18px;
             text-align: left;
         }
 
+        .meta > div {
+            white-space: nowrap;
+        }
+
         .meta .fill {
-            min-width: 210px;
+            min-width: 160px;
             text-align: left;
+        }
+
+        .meta [data-preview="vin"] {
+            min-width: 210px;
         }
 
         .divider {
@@ -613,7 +622,7 @@
 
                 <label class="field">
                     <span>VIN</span>
-                    <input name="vin" value="" maxlength="17" pattern="[A-HJ-NPR-Za-hj-npr-z0-9]{6,17}" placeholder="17 символов" required>
+                    <input name="vin" value="" maxlength="17" pattern="[A-HJ-NPR-Za-hj-npr-z0-9АВЕКМНОРСТУХавекмнорстух]{17}" placeholder="17 символов" required>
                 </label>
 
                 <label class="field">
@@ -749,6 +758,27 @@
                 return parts[2] + '.' + parts[1] + '.' + parts[0];
             }
 
+            function normalizeVin(value) {
+                const map = {
+                    'А': 'A',
+                    'В': 'B',
+                    'Е': 'E',
+                    'К': 'K',
+                    'М': 'M',
+                    'Н': 'H',
+                    'О': 'O',
+                    'Р': 'P',
+                    'С': 'C',
+                    'Т': 'T',
+                    'У': 'Y',
+                    'Х': 'X',
+                };
+
+                return String(value || '').trim().toUpperCase().replace(/[АВЕКМНОРСТУХ]/g, function (char) {
+                    return map[char] || char;
+                });
+            }
+
             function updatePreview() {
                 const lastName = getField('last_name') ? getField('last_name').value : '';
                 const firstName = getField('first_name') ? getField('first_name').value : '';
@@ -760,7 +790,7 @@
                     mileageField.value = serviceMileage[serviceField.value];
                 }
                 if (vinField) {
-                    vinField.value = vinField.value.toUpperCase();
+                    vinField.value = normalizeVin(vinField.value);
                 }
 
                 setPreview('certificate_number', certificateNumberInput ? certificateNumberInput.value : '', 'авто');

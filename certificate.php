@@ -38,6 +38,38 @@ function h(string $value): string
     return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
+function normalize_vin(string $value): string
+{
+    $value = strtr(trim($value), [
+        'А' => 'A',
+        'а' => 'A',
+        'В' => 'B',
+        'в' => 'B',
+        'Е' => 'E',
+        'е' => 'E',
+        'К' => 'K',
+        'к' => 'K',
+        'М' => 'M',
+        'м' => 'M',
+        'Н' => 'H',
+        'н' => 'H',
+        'О' => 'O',
+        'о' => 'O',
+        'Р' => 'P',
+        'р' => 'P',
+        'С' => 'C',
+        'с' => 'C',
+        'Т' => 'T',
+        'т' => 'T',
+        'У' => 'Y',
+        'у' => 'Y',
+        'Х' => 'X',
+        'х' => 'X',
+    ]);
+
+    return strtoupper($value);
+}
+
 function find_logo(array $brand, array $extensions): ?string
 {
     foreach ($brand['logo_names'] as $name) {
@@ -119,7 +151,7 @@ $data = [
     'service_to' => field('service_to', 'ТО-0'),
     'mileage' => field('mileage'),
     'discount' => field('discount'),
-    'vin' => strtoupper(field('vin')),
+    'vin' => normalize_vin(field('vin')),
     'valid_until' => field('valid_until'),
     'certificate_number' => field('certificate_number'),
 ];
@@ -141,8 +173,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    if ($data['vin'] !== '' && !preg_match('/^[A-HJ-NPR-Z0-9]{6,17}$/u', $data['vin'])) {
-        $errors[] = 'VIN должен содержать от 6 до 17 латинских букв и цифр без I, O, Q.';
+    if ($data['vin'] !== '' && !preg_match('/^[A-HJ-NPR-Z0-9]{17}$/u', $data['vin'])) {
+        $errors[] = 'VIN должен содержать 17 латинских букв и цифр без I, O, Q. Похожие кириллические буквы заменяются автоматически.';
     }
 
     if ($data['valid_until'] !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $data['valid_until'])) {
@@ -451,13 +483,13 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
         .cert-title {
             align-items: end;
             display: flex;
-            gap: 14px;
+            gap: 10px;
             justify-content: center;
             margin-bottom: 34px;
         }
 
         .cert-title strong {
-            font-size: 47px;
+            font-size: 43px;
             font-weight: 500;
             letter-spacing: 2px;
             text-transform: uppercase;
@@ -467,11 +499,12 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
         .cert-number {
             border-bottom: 2px solid #2b3341;
             display: inline-block;
-            font-size: 29px;
+            font-size: 25px;
             font-weight: 700;
-            min-width: 190px;
+            min-width: 250px;
             padding: 0 8px 4px;
             text-align: left;
+            white-space: nowrap;
         }
 
         .separator {
@@ -650,16 +683,24 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
         .meta {
             align-items: center;
             display: grid;
-            grid-template-columns: 1fr auto 1fr;
-            gap: 20px;
+            grid-template-columns: minmax(0, 0.9fr) auto minmax(0, 1.3fr);
+            gap: 16px;
             font-family: "Arial Narrow", Arial, Helvetica, sans-serif;
             font-size: 18px;
             text-align: left;
         }
 
+        .meta > div {
+            white-space: nowrap;
+        }
+
         .meta .fill {
-            min-width: 210px;
+            min-width: 160px;
             text-align: left;
+        }
+
+        .meta [data-preview="vin"] {
+            min-width: 210px;
         }
 
         .divider {
@@ -793,7 +834,7 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
 
                 <label class="field">
                     <span>VIN</span>
-                    <input name="vin" value="<?= h($data['vin']) ?>" maxlength="17" pattern="[A-HJ-NPR-Za-hj-npr-z0-9]{6,17}" placeholder="17 символов" required>
+                    <input name="vin" value="<?= h($data['vin']) ?>" maxlength="17" pattern="[A-HJ-NPR-Za-hj-npr-z0-9АВЕКМНОРСТУХавекмнорстух]{17}" placeholder="17 символов" required>
                 </label>
 
                 <label class="field">
@@ -939,6 +980,27 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
                 return parts[2] + '.' + parts[1] + '.' + parts[0];
             }
 
+            function normalizeVin(value) {
+                const map = {
+                    'А': 'A',
+                    'В': 'B',
+                    'Е': 'E',
+                    'К': 'K',
+                    'М': 'M',
+                    'Н': 'H',
+                    'О': 'O',
+                    'Р': 'P',
+                    'С': 'C',
+                    'Т': 'T',
+                    'У': 'Y',
+                    'Х': 'X',
+                };
+
+                return String(value || '').trim().toUpperCase().replace(/[АВЕКМНОРСТУХ]/g, function (char) {
+                    return map[char] || char;
+                });
+            }
+
             function updatePreview() {
                 const lastName = getField('last_name') ? getField('last_name').value : '';
                 const firstName = getField('first_name') ? getField('first_name').value : '';
@@ -950,7 +1012,7 @@ $formattedDate = $data['valid_until'] !== '' ? date('d.m.Y', strtotime($data['va
                     mileageField.value = serviceMileage[serviceField.value];
                 }
                 if (vinField) {
-                    vinField.value = vinField.value.toUpperCase();
+                    vinField.value = normalizeVin(vinField.value);
                 }
 
                 setPreview('certificate_number', certificateNumberInput ? certificateNumberInput.value : '', 'авто');
