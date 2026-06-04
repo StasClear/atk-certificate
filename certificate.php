@@ -18,17 +18,17 @@ $brands = [
 
 $logoExtensions = ['svg', 'png', 'webp', 'jpg', 'jpeg'];
 $serviceMileageMap = [
-    'ТО-0' => '5000 км',
-    'ТО-1' => '10000 км',
-    'ТО-2' => '20000 км',
-    'ТО-3' => '30000 км',
-    'ТО-4' => '40000 км',
-    'ТО-5' => '50000 км',
-    'ТО-6' => '60000 км',
-    'ТО-7' => '70000 км',
-    'ТО-8' => '80000 км',
-    'ТО-9' => '90000 км',
-    'ТО-10' => '100000 км',
+    'ТО-0' => 'до 5000',
+    'ТО-1' => 'до 10000',
+    'ТО-2' => 'до 20000',
+    'ТО-3' => 'до 30000',
+    'ТО-4' => 'до 40000',
+    'ТО-5' => 'до 50000',
+    'ТО-6' => 'до 60000',
+    'ТО-7' => 'до 70000',
+    'ТО-8' => 'до 80000',
+    'ТО-9' => 'до 90000',
+    'ТО-10' => 'до 100000',
 ];
 $errors = [];
 $statusMessages = [];
@@ -145,6 +145,17 @@ function read_registry(): array
     return is_array($data) ? $data : [];
 }
 
+function find_registry_record(string $certificateNumber): ?array
+{
+    foreach (read_registry() as $record) {
+        if (is_array($record) && ($record['certificate_number'] ?? '') === $certificateNumber) {
+            return $record;
+        }
+    }
+
+    return null;
+}
+
 function save_registry_record(array $record): void
 {
     $file = registry_file();
@@ -194,34 +205,44 @@ function yandex_request(string $method, string $url, string $token, ?string $bod
         throw new RuntimeException('На сервере не включен PHP cURL, он нужен для загрузки в Яндекс Диск.');
     }
 
-    $curl = curl_init($url);
-    curl_setopt_array($curl, [
-        CURLOPT_CUSTOMREQUEST => $method,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => ['Authorization: OAuth ' . $token],
-        CURLOPT_TIMEOUT => 60,
-    ]);
+    $lastMessage = '';
 
-    if ($body !== null) {
-        curl_setopt($curl, CURLOPT_POSTFIELDS, $body);
+    for ($attempt = 1; $attempt <= 5; $attempt++) {
+        $curl = curl_init($url);
+        curl_setopt_array($curl, [
+            CURLOPT_CUSTOMREQUEST => $method,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ['Authorization: OAuth ' . $token],
+            CURLOPT_TIMEOUT => 90,
+        ]);
+
+        if ($body !== null) {
+            curl_setopt($curl, CURLOPT_POSTFIELDS, $body);
+        }
+
+        $response = curl_exec($curl);
+        $status = (int)curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+        $error = curl_error($curl);
+        curl_close($curl);
+
+        if ($response === false) {
+            throw new RuntimeException('Ошибка запроса к Яндекс Диску: ' . $error);
+        }
+
+        $decoded = json_decode((string)$response, true);
+        if ($status < 400) {
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        $lastMessage = is_array($decoded) ? (string)($decoded['message'] ?? $decoded['error'] ?? $response) : (string)$response;
+        if (!in_array($status, [423, 429, 503], true) || $attempt === 5) {
+            throw new RuntimeException('Яндекс Диск вернул ошибку ' . $status . ': ' . $lastMessage);
+        }
+
+        sleep($attempt * 2);
     }
 
-    $response = curl_exec($curl);
-    $status = (int)curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
-    $error = curl_error($curl);
-    curl_close($curl);
-
-    if ($response === false) {
-        throw new RuntimeException('Ошибка запроса к Яндекс Диску: ' . $error);
-    }
-
-    $decoded = json_decode((string)$response, true);
-    if ($status >= 400) {
-        $message = is_array($decoded) ? (string)($decoded['message'] ?? $decoded['error'] ?? $response) : (string)$response;
-        throw new RuntimeException('Яндекс Диск вернул ошибку ' . $status . ': ' . $message);
-    }
-
-    return is_array($decoded) ? $decoded : [];
+    throw new RuntimeException('Яндекс Диск вернул ошибку: ' . $lastMessage);
 }
 
 function yandex_api_url(string $path, array $query = []): string
@@ -237,11 +258,13 @@ function yandex_ensure_folder(string $folder, string $token): void
     foreach ($parts as $part) {
         $current .= '/' . $part;
         try {
-            yandex_request('PUT', yandex_api_url('resources', ['path' => $current]), $token);
+            yandex_request('GET', yandex_api_url('resources', ['path' => $current]), $token);
         } catch (RuntimeException $exception) {
-            if (!str_contains($exception->getMessage(), '409')) {
+            if (!str_contains($exception->getMessage(), '404')) {
                 throw $exception;
             }
+
+            yandex_request('PUT', yandex_api_url('resources', ['path' => $current]), $token);
         }
     }
 }
@@ -319,9 +342,6 @@ function create_registry_xlsx(array $registry): string
         'Номер сертификата',
         'Дата создания',
         'Действие',
-        'Фамилия',
-        'Имя',
-        'Отчество',
         'ФИО',
         'Бренд',
         'ТО',
@@ -330,9 +350,6 @@ function create_registry_xlsx(array $registry): string
         'VIN',
         'Срок действия',
         'PDF на Яндекс Диске',
-        'Путь PDF на Диске',
-        'Локальный PDF',
-        'Ошибка PDF',
     ];
 
     $rows = [$headers];
@@ -345,9 +362,6 @@ function create_registry_xlsx(array $registry): string
             (string)($record['certificate_number'] ?? ''),
             (string)($record['created_at'] ?? ''),
             (string)($record['action'] ?? ''),
-            (string)($record['last_name'] ?? ''),
-            (string)($record['first_name'] ?? ''),
-            (string)($record['middle_name'] ?? ''),
             (string)($record['full_name'] ?? ''),
             (string)($record['brand_label'] ?? $record['brand'] ?? ''),
             (string)($record['service_to'] ?? ''),
@@ -356,9 +370,6 @@ function create_registry_xlsx(array $registry): string
             (string)($record['vin'] ?? ''),
             (string)($record['valid_until_formatted'] ?? $record['valid_until'] ?? ''),
             (string)($record['pdf_public_url'] ?? ''),
-            (string)($record['pdf_disk_path'] ?? ''),
-            (string)($record['pdf_local_path'] ?? ''),
-            (string)($record['pdf_error'] ?? ''),
         ];
     }
 
@@ -417,7 +428,11 @@ function create_registry_xlsx(array $registry): string
 
 function file_uri(string $path): string
 {
-    return 'file:///' . str_replace('%2F', '/', rawurlencode(str_replace('\\', '/', $path)));
+    $path = str_replace('\\', '/', $path);
+    $encoded = str_replace('%2F', '/', rawurlencode($path));
+    $encoded = preg_replace('/^([A-Za-z])%3A/', '$1:', $encoded);
+
+    return 'file:///' . $encoded;
 }
 
 function create_pdf_from_html(string $html, string $number, array $config): string
@@ -444,7 +459,7 @@ function create_pdf_from_html(string $html, string $number, array $config): stri
     file_put_contents($htmlFile, $html);
 
     $command = escapeshellarg($browser)
-        . ' --headless --disable-gpu --no-first-run --print-to-pdf=' . escapeshellarg($pdfFile)
+        . ' --headless --disable-gpu --no-first-run --print-to-pdf-no-header --no-pdf-header-footer --print-to-pdf=' . escapeshellarg($pdfFile)
         . ' ' . escapeshellarg(file_uri($htmlFile));
 
     exec($command, $output, $exitCode);
@@ -539,7 +554,7 @@ if ($data['mileage'] === '') {
 
 $action = field('action');
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     foreach (['last_name' => 'Фамилия', 'first_name' => 'Имя', 'service_to' => 'ТО', 'mileage' => 'Пробег', 'discount' => 'Скидка', 'vin' => 'VIN', 'valid_until' => 'Срок действия'] as $key => $label) {
         if ($data[$key] === '') {
             $errors[] = 'Заполните поле "' . $label . '".';
@@ -1223,15 +1238,15 @@ ob_start();
                 <label class="field">
                     <span>ТО</span>
                     <select name="service_to">
-                        <?php foreach (array_keys($serviceMileageMap) as $service): ?>
-                            <option value="<?= h($service) ?>" <?= $data['service_to'] === $service ? 'selected' : '' ?>><?= h($service) ?></option>
+                        <?php foreach ($serviceMileageMap as $service => $mileage): ?>
+                            <option value="<?= h($service) ?>" <?= $data['service_to'] === $service ? 'selected' : '' ?>><?= h($service . ' - ' . $mileage) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </label>
 
                 <label class="field">
                     <span>Пробег до</span>
-                    <input name="mileage" value="<?= h($data['mileage']) ?>" placeholder="Например: 10000 км" readonly required>
+                    <input name="mileage" value="<?= h($data['mileage']) ?>" placeholder="Например: до 10000" readonly required>
                 </label>
 
                 <label class="field">
@@ -1287,7 +1302,7 @@ ob_start();
 
                     <p class="recipient <?= $fullName === '' ? 'placeholder' : '' ?>" data-preview="full_name"><?= h($fullName !== '' ? $fullName : 'Фамилия Имя Отчество') ?></p>
                     <div class="service-line">на техническое обслуживание</div>
-                    <div class="service-line">«<span class="fill" data-preview="service_to"><?= h($data['service_to']) ?></span>» пробег до <span class="fill <?= $data['mileage'] === '' ? 'placeholder' : '' ?>" data-preview="mileage"><?= h($data['mileage'] !== '' ? $data['mileage'] : ' ') ?></span></div>
+                    <div class="service-line">«<span class="fill" data-preview="service_to"><?= h($data['service_to']) ?></span>» пробег <span class="fill <?= $data['mileage'] === '' ? 'placeholder' : '' ?>" data-preview="mileage"><?= h($data['mileage'] !== '' ? $data['mileage'] : ' ') ?></span></div>
                     <div class="discount-line">Скидка в размере <span class="fill <?= $data['discount'] === '' ? 'placeholder' : '' ?>" data-preview="discount"><?= h($data['discount'] !== '' ? $data['discount'] : ' ') ?></span></div>
                 </div>
 
@@ -1485,6 +1500,12 @@ if ($pendingSave && $generated && !$errors) {
         $record['pdf_disk_path'] = $upload['disk_path'];
         $record['pdf_public_url'] = $upload['public_url'];
     } catch (Throwable $exception) {
+        $existingRecord = find_registry_record($data['certificate_number']);
+        if ($existingRecord) {
+            $record['pdf_disk_path'] = $existingRecord['pdf_disk_path'] ?? null;
+            $record['pdf_public_url'] = $existingRecord['pdf_public_url'] ?? null;
+        }
+
         $record['pdf_error'] = $exception->getMessage();
     }
 

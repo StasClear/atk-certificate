@@ -624,23 +624,23 @@
                 <label class="field">
                     <span>ТО</span>
                     <select name="service_to">
-                                                    <option value="ТО-0" selected>ТО-0</option>
-                                                    <option value="ТО-1" >ТО-1</option>
-                                                    <option value="ТО-2" >ТО-2</option>
-                                                    <option value="ТО-3" >ТО-3</option>
-                                                    <option value="ТО-4" >ТО-4</option>
-                                                    <option value="ТО-5" >ТО-5</option>
-                                                    <option value="ТО-6" >ТО-6</option>
-                                                    <option value="ТО-7" >ТО-7</option>
-                                                    <option value="ТО-8" >ТО-8</option>
-                                                    <option value="ТО-9" >ТО-9</option>
-                                                    <option value="ТО-10" >ТО-10</option>
+                                                    <option value="ТО-0" selected>ТО-0 - до 5000</option>
+                                                    <option value="ТО-1" >ТО-1 - до 10000</option>
+                                                    <option value="ТО-2" >ТО-2 - до 20000</option>
+                                                    <option value="ТО-3" >ТО-3 - до 30000</option>
+                                                    <option value="ТО-4" >ТО-4 - до 40000</option>
+                                                    <option value="ТО-5" >ТО-5 - до 50000</option>
+                                                    <option value="ТО-6" >ТО-6 - до 60000</option>
+                                                    <option value="ТО-7" >ТО-7 - до 70000</option>
+                                                    <option value="ТО-8" >ТО-8 - до 80000</option>
+                                                    <option value="ТО-9" >ТО-9 - до 90000</option>
+                                                    <option value="ТО-10" >ТО-10 - до 100000</option>
                                             </select>
                 </label>
 
                 <label class="field">
                     <span>Пробег до</span>
-                    <input name="mileage" value="5000 км" placeholder="Например: 10000 км" readonly required>
+                    <input name="mileage" value="до 5000" placeholder="Например: до 10000" readonly required>
                 </label>
 
                 <label class="field">
@@ -692,7 +692,7 @@
 
                     <p class="recipient placeholder" data-preview="full_name">Фамилия Имя Отчество</p>
                     <div class="service-line">на техническое обслуживание</div>
-                    <div class="service-line">«<span class="fill" data-preview="service_to">ТО-0</span>» пробег до <span class="fill " data-preview="mileage">5000 км</span></div>
+                    <div class="service-line">«<span class="fill" data-preview="service_to">ТО-0</span>» пробег <span class="fill " data-preview="mileage">до 5000</span></div>
                     <div class="discount-line">Скидка в размере <span class="fill placeholder" data-preview="discount"> </span></div>
                 </div>
 
@@ -726,7 +726,7 @@
         <script>
         (function () {
             const brandAssets = {"chery":{"label":"Chery","dealer":"АТК-МОТОРС ЛЕСНАЯ","logo":"logo-chery.svg","background":"background-chery.png"},"tenet":{"label":"Tenet","dealer":"АТК-МОТОРС ЛЕСНАЯ","logo":"logo-tenet.svg","background":"background-tenet.png"}};
-            const serviceMileage = {"ТО-0":"5000 км","ТО-1":"10000 км","ТО-2":"20000 км","ТО-3":"30000 км","ТО-4":"40000 км","ТО-5":"50000 км","ТО-6":"60000 км","ТО-7":"70000 км","ТО-8":"80000 км","ТО-9":"90000 км","ТО-10":"100000 км"};
+            const serviceMileage = {"ТО-0":"до 5000","ТО-1":"до 10000","ТО-2":"до 20000","ТО-3":"до 30000","ТО-4":"до 40000","ТО-5":"до 50000","ТО-6":"до 60000","ТО-7":"до 70000","ТО-8":"до 80000","ТО-9":"до 90000","ТО-10":"до 100000"};
             const form = document.querySelector('form.form-grid');
             const certificate = document.getElementById('certificate');
             const logoBox = document.querySelector('[data-brand-logo]');
