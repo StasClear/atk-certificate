@@ -3,6 +3,8 @@
 ## Состав проекта
 
 - `certificate.php` - форма генерации и печати сертификата.
+- `start-windows.cmd` - запуск локальной версии на Windows.
+- `LOCAL_WINDOWS.md` - инструкция для работы с Яндекс.Диском на компьютере.
 - `index.html` - статическая демо-версия для GitHub Pages.
 - `background-chery.png` - фоновое изображение сертификата Chery.
 - `background-tenet.png` - фоновое изображение сертификата Tenet.
@@ -12,7 +14,19 @@
 - `logo-tenet.svg` - логотип Tenet.
 - `certificate-counter.json` - создается автоматически при первой генерации номера.
 
-## Установка
+## Локальная установка на Windows
+
+Основной вариант для заказчика: приложение запускается на компьютере, а PDF и таблица сохраняются в локальную папку Яндекс.Диска.
+
+1. Установите Яндекс.Диск для Windows.
+2. Установите PHP 8.1+.
+3. Распакуйте пакет в отдельную папку, например `C:\ATK-Certificates`.
+4. Запустите `start-windows.cmd`.
+5. Если папка Яндекс.Диска нестандартная, поправьте `data_dir` в `config.local.php`.
+
+Подробная инструкция: `LOCAL_WINDOWS.md`.
+
+## Серверная установка
 
 1. Загрузите файлы `certificate.php`, `background-chery.png`, `background-tenet.png`, `logo-chery.svg` и `logo-tenet.svg` в одну папку на сервере.
 2. Убедитесь, что PHP может записывать в эту папку. Это нужно для файла счетчика `certificate-counter.json`.
@@ -26,20 +40,23 @@
 
 Рабочая PHP-версия сохраняет каждый сформированный сертификат в `certificates-registry.json`, создает локальный PDF в `generated-pdfs/` и обновляет таблицу `certificates.xlsx`.
 
-Для загрузки PDF и XLSX на Яндекс Диск создайте `config.local.php` по примеру `config.example.php` и впишите временный или рабочий OAuth-токен:
+Для локального режима укажите папку Яндекс.Диска в `data_dir`. OAuth-токен не нужен:
 
 ```php
 <?php
 return [
-    'yandex_disk_token' => 'ваш_токен',
+    'data_dir' => '%USERPROFILE%\\YandexDisk\\АТК Сертификаты',
+    'yandex_disk_token' => '',
     'yandex_disk_folder' => '/АТК Сертификаты',
-    'yandex_disk_publish_files' => true,
+    'yandex_disk_publish_files' => false,
     'pdf_generator' => [
         'enabled' => true,
         'browser_path' => 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
     ],
 ];
 ```
+
+Для серверной загрузки через REST API можно дополнительно заполнить `yandex_disk_token`.
 
 Файлы `config.local.php`, `certificates-registry.json`, `certificates.xlsx` и папка `generated-pdfs/` не выгружаются в GitHub.
 

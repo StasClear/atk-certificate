@@ -107,6 +107,7 @@ function brand_background(array $brand): string
 function load_local_config(): array
 {
     $default = [
+        'data_dir' => '',
         'yandex_disk_token' => '',
         'yandex_disk_folder' => '/АТК Сертификаты',
         'yandex_disk_publish_files' => true,
@@ -129,9 +130,40 @@ function load_local_config(): array
     return array_replace_recursive($default, $config);
 }
 
+function app_data_dir(): string
+{
+    $config = load_local_config();
+    $dataDir = trim((string)($config['data_dir'] ?? ''));
+
+    if ($dataDir === '') {
+        return __DIR__;
+    }
+
+    $dataDir = preg_replace_callback('/%([^%]+)%/', static function (array $matches): string {
+        $value = getenv($matches[1]);
+        return $value !== false ? $value : $matches[0];
+    }, $dataDir) ?? $dataDir;
+
+    $dataDir = rtrim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $dataDir), DIRECTORY_SEPARATOR);
+    if (!preg_match('/^[A-Za-z]:\\\\/', $dataDir) && !str_starts_with($dataDir, DIRECTORY_SEPARATOR)) {
+        $dataDir = __DIR__ . DIRECTORY_SEPARATOR . $dataDir;
+    }
+
+    if (!is_dir($dataDir) && !mkdir($dataDir, 0775, true) && !is_dir($dataDir)) {
+        throw new RuntimeException('Не удалось создать рабочую папку: ' . $dataDir);
+    }
+
+    return $dataDir;
+}
+
+function app_data_path(string $file): string
+{
+    return app_data_dir() . DIRECTORY_SEPARATOR . $file;
+}
+
 function registry_file(): string
 {
-    return __DIR__ . DIRECTORY_SEPARATOR . 'certificates-registry.json';
+    return app_data_path('certificates-registry.json');
 }
 
 function read_registry(): array
@@ -410,7 +442,7 @@ function create_registry_xlsx(array $registry): string
         . '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
         . '</Types>';
 
-    $xlsxFile = __DIR__ . DIRECTORY_SEPARATOR . 'certificates.xlsx';
+    $xlsxFile = app_data_path('certificates.xlsx');
     $zip = new ZipArchive();
     if ($zip->open($xlsxFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
         throw new RuntimeException('Не удалось создать certificates.xlsx.');
@@ -446,13 +478,13 @@ function create_pdf_from_html(string $html, string $number, array $config): stri
         throw new RuntimeException('Не найден браузер для генерации PDF: ' . $browser);
     }
 
-    $pdfDir = __DIR__ . DIRECTORY_SEPARATOR . 'generated-pdfs';
+    $pdfDir = app_data_path('generated-pdfs');
     if (!is_dir($pdfDir) && !mkdir($pdfDir, 0775, true) && !is_dir($pdfDir)) {
         throw new RuntimeException('Не удалось создать папку generated-pdfs.');
     }
 
     $safeNumber = preg_replace('/[^A-Z0-9-]/', '', $number) ?: 'certificate';
-    $htmlFile = __DIR__ . DIRECTORY_SEPARATOR . '.pdf-render-' . $safeNumber . '.html';
+    $htmlFile = app_data_path('.pdf-render-' . $safeNumber . '.html');
     $pdfFile = $pdfDir . DIRECTORY_SEPARATOR . $safeNumber . '.pdf';
     $base = '<base href="' . h(file_uri(__DIR__ . DIRECTORY_SEPARATOR)) . '">';
     $html = preg_replace('/<head>/', '<head>' . $base, $html, 1) ?: $html;
@@ -474,7 +506,7 @@ function create_pdf_from_html(string $html, string $number, array $config): stri
 
 function next_certificate_number(): string
 {
-    $counterFile = __DIR__ . DIRECTORY_SEPARATOR . 'certificate-counter.json';
+    $counterFile = app_data_path('certificate-counter.json');
     $handle = fopen($counterFile, 'c+');
 
     if (!$handle) {
@@ -1494,11 +1526,13 @@ if ($pendingSave && $generated && !$errors) {
         $pdfFile = create_pdf_from_html($pageHtml, $data['certificate_number'], $config);
         $record['pdf_local_path'] = basename(dirname($pdfFile)) . '/' . basename($pdfFile);
 
-        $diskFolder = rtrim((string)$config['yandex_disk_folder'], '/');
-        $diskPath = $diskFolder . '/pdf/' . basename($pdfFile);
-        $upload = yandex_upload_file($pdfFile, $diskPath, $config);
-        $record['pdf_disk_path'] = $upload['disk_path'];
-        $record['pdf_public_url'] = $upload['public_url'];
+        if (trim((string)$config['yandex_disk_token']) !== '') {
+            $diskFolder = rtrim((string)$config['yandex_disk_folder'], '/');
+            $diskPath = $diskFolder . '/pdf/' . basename($pdfFile);
+            $upload = yandex_upload_file($pdfFile, $diskPath, $config);
+            $record['pdf_disk_path'] = $upload['disk_path'];
+            $record['pdf_public_url'] = $upload['public_url'];
+        }
     } catch (Throwable $exception) {
         $existingRecord = find_registry_record($data['certificate_number']);
         if ($existingRecord) {
